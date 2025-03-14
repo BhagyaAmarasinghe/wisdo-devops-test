@@ -1,0 +1,204 @@
+name: Deploy Infrastructure
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'terraform/**'
+      - 'src/**'
+      - '.github/workflows/deploy.yml'
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'terraform/**'
+      - 'src/**'
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to deploy to'
+        required: true
+        default: 'dev'
+        type: choice
+        options:
+          - dev
+          - staging
+          - prod
+
+permissions:
+  id-token: write  # Required for OIDC AWS authentication
+  contents: read   # Required to checkout the repository
+
+env:
+  AWS_REGION: us-east-1
+  TF_VERSION: 1.5.7
+
+jobs:
+  validate:
+    name: Validate Code
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v2
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: Terraform Format Check
+        run: |
+          cd terraform
+          terraform fmt -check -recursive
+
+      - name: Terraform Validate
+        run: |
+          cd terraform/environments/dev
+          terraform init -backend=false
+          terraform validate
+
+  build:
+    name: Build and Push Images
+    needs: validate
+    if: github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    outputs:
+      image_tag: ${{ steps.set-tag.outputs.image_tag }}
+      environment: ${{ steps.set-env.outputs.environment }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set environment
+        id: set-env
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            echo "environment=${{ github.event.inputs.environment }}" >> $GITHUB_OUTPUT
+          else
+            echo "environment=dev" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v1
+
+      - name: Set image tag
+        id: set-tag
+        run: echo "image_tag=${GITHUB_SHA::8}" >> $GITHUB_OUTPUT
+
+      - name: Build and push frontend image
+        uses: docker/build-push-action@v4
+        with:
+          context: ./src/frontend
+          push: true
+          tags: ${{ steps.login-ecr.outputs.registry }}/${{ steps.set-env.outputs.environment }}-frontend:${{ steps.set-tag.outputs.image_tag }}
+
+      - name: Build and push Service A image
+        uses: docker/build-push-action@v4
+        with:
+          context: ./src/service-a
+          push: true
+          tags: ${{ steps.login-ecr.outputs.registry }}/${{ steps.set-env.outputs.environment }}-service-a:${{ steps.set-tag.outputs.image_tag }}
+
+      - name: Build and push Service B image
+        uses: docker/build-push-action@v4
+        with:
+          context: ./src/service-b
+          push: true
+          tags: ${{ steps.login-ecr.outputs.registry }}/${{ steps.set-env.outputs.environment }}-service-b:${{ steps.set-tag.outputs.image_tag }}
+
+  plan:
+    name: Terraform Plan
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v2
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: Terraform Init
+        run: |
+          cd terraform/environments/${{ needs.build.outputs.environment }}
+          terraform init
+
+      - name: Terraform Plan
+        run: |
+          cd terraform/environments/${{ needs.build.outputs.environment }}
+          terraform plan \
+            -var="frontend_image_tag=${{ needs.build.outputs.image_tag }}" \
+            -var="service_a_image_tag=${{ needs.build.outputs.image_tag }}" \
+            -var="service_b_image_tag=${{ needs.build.outputs.image_tag }}" \
+            -out=tfplan
+
+      - name: Upload Terraform Plan
+        uses: actions/upload-artifact@v3
+        with:
+          name: terraform-plan
+          path: terraform/environments/${{ needs.build.outputs.environment }}/tfplan
+
+  apply:
+    name: Terraform Apply
+    needs: [build, plan]
+    runs-on: ubuntu-latest
+    environment: ${{ needs.build.outputs.environment }}  # For deployment approval
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v2
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: Download Terraform Plan
+        uses: actions/download-artifact@v3
+        with:
+          name: terraform-plan
+          path: terraform/environments/${{ needs.build.outputs.environment }}
+
+      - name: Terraform Init
+        run: |
+          cd terraform/environments/${{ needs.build.outputs.environment }}
+          terraform init
+
+      - name: Terraform Apply
+        run: |
+          cd terraform/environments/${{ needs.build.outputs.environment }}
+          terraform apply -auto-approve tfplan
+
+  notify:
+    name: Notify Deployment Status
+    needs: [apply]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send Slack notification
+        uses: slackapi/slack-github-action@v1.24.0
+        with:
+          payload: |
+            {
+              "text": "Deployment to ${{ needs.build.outputs.environment }} ${{ needs.apply.result == 'success' && 'succeeded! 🚀' || 'failed! ❌' }}"
+            }
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
