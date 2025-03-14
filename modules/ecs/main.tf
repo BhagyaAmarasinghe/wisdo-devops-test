@@ -1,6 +1,3 @@
-# terraform/modules/ecs/main.tf
-
-# ECS Cluster using AWS ECS Cluster module
 module "ecs_cluster" {
   source  = "terraform-aws-modules/ecs/aws//modules/cluster"
   version = "~> 5.2"

@@ -1,5 +1,3 @@
-# terraform/environments/prod/terraform.tfvars
-
 # General configuration
 prefix      = "wisdo-app"
 region      = "us-east-1"

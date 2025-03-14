@@ -1,5 +1,3 @@
-# terraform/environments/prod/locals.tf
-
 locals {
   # Extract MongoDB credentials from Secrets Manager
   mongodb_creds = jsondecode(data.aws_secretsmanager_secret_version.mongodb_credentials.secret_string)

@@ -1,5 +1,3 @@
-# terraform/environments/prod/outputs.tf
-
 output "cloudfront_domain_name" {
   description = "CloudFront distribution domain name"
   value       = module.load_balancing.cloudfront_domain_name

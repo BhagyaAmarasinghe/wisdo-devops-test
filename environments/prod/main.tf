@@ -1,6 +1,3 @@
-# terraform/environments/prod/main.tf
-
-# Include global provider and version configuration
 module "global" {
   source = "../../global/shared"
 

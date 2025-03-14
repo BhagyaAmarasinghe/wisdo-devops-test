@@ -1,5 +1,3 @@
-# terraform/environments/prod/data.tf
-
 # Current AWS account information
 data "aws_caller_identity" "current" {}
 

@@ -1,6 +1,4 @@
-# terraform/modules/ecs/variables.tf
 
-# General configuration
 variable "prefix" {
   description = "Prefix for all resources"
   type        = string

@@ -1,6 +1,3 @@
-# terraform/modules/networking/main.tf
-
-# Use the AWS VPC module
 module "vpc" {
   source  = "terraform-aws-modules/vpc/aws"
   version = "~> 5.0"

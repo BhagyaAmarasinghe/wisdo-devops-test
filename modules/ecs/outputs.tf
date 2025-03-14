@@ -1,5 +1,3 @@
-# terraform/modules/ecs/outputs.tf
-
 output "cluster_id" {
   description = "ID of the ECS cluster"
   value       = module.ecs_cluster.id
