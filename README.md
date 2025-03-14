@@ -82,6 +82,7 @@ All IAM roles use permission boundaries for additional security and are regularl
 
 The infrastructure is defined using Terraform with a modular approach:
 
+```text
 terraform/
 ├── environments/
 │   ├── dev/
@@ -96,7 +97,7 @@ terraform/
 │   ├── messaging/     # SQS queues
 │   └── monitoring/    # CloudWatch alarms
 └── global/
-└── shared/        # Common provider configurations
+    └── shared/        # Common provider configurations
 
 
 Community modules are leveraged where appropriate for standardization and best practices.
