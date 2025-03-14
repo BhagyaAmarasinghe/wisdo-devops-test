@@ -81,3 +81,35 @@ All IAM roles use permission boundaries for additional security and are regularl
 ## Infrastructure Implementation
 
 The infrastructure is defined using Terraform with a modular approach:
+
+terraform/
+├── environments/
+│   ├── dev/
+│   ├── staging/
+│   └── prod/
+├── modules/
+│   ├── networking/    # VPC, subnets, security groups
+│   ├── ecs/           # ECS cluster, services, task definitions
+│   ├── load_balancing/ # ALB and CloudFront
+│   ├── security/      # IAM roles and policies
+│   ├── mongodb/       # PrivateLink connection
+│   ├── messaging/     # SQS queues
+│   └── monitoring/    # CloudWatch alarms
+└── global/
+└── shared/        # Common provider configurations
+
+
+Community modules are leveraged where appropriate for standardization and best practices.
+
+## CI/CD Pipeline
+
+The infrastructure is deployed through a GitHub Actions pipeline that follows these stages:
+
+1. **Validate**: Terraform format check and validation
+2. **Build**: Docker image building and ECR pushing
+3. **Plan**: Terraform plan stage to preview changes
+4. **Apply**: Apply infrastructure changes with appropriate approvals
+5. **Test**: Run post-deployment tests to verify functionality
+6. **Notify**: Send deployment status notifications
+
+Environment-specific configurations and manual approval gates ensure safe deployments to production.
